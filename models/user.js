@@ -8,13 +8,13 @@ const userSchema = mongoose.Schema({
     email:{
         type:String,
         unique:true,
-        match:['/^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=])(?=\S+$).{8,20}$/','invalid email'],
+        // match:['/^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=])(?=\S+$).{8,20}$/','invalid email'],
         trim:true
     },
-    pasword:{
+    password:{
         type:String,
         minLength:[8, 'password can not be less than 8 xxx'],
-        maxlength:[32, 'password can not be more than 32 xxx']
+        // maxlength:[32, 'password can not be more than 32 xxx']
     },
     address:{
         type:String
