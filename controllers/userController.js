@@ -73,7 +73,7 @@ const logUserIn = async (req, res) =>{
         })
         if(userExist && isPasswordCorrect){
             const {_id, name, email} = userExist
-            res.status(200).json({_id, name, email})
+            res.status(200).json({msg: { _id, name, email}, Token})
         }
     } catch (error) {
         return res.status(500).json({msg: 'invalid user'})
