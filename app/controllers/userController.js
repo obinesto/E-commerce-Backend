@@ -1,93 +1,68 @@
 const User = require("../models/userModel.js");
 const { hashPassword, comparePassword } = require("../middleware/auth.js");
-const generatedToken = require("../middleware/jwt.js");
+const generateToken = require("../middleware/jwt.js");
 
-// Create User
+const cookieOptions = () => ({
+  path: "/",
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+});
+
+const publicUser = (user) => ({ _id: user._id, name: user.name, email: user.email });
+
 const createUser = async (req, res) => {
-  const { name: userName, email: userEmail, password: userPassword } = req.body;
-
+  const { name, email, password } = req.body || {};
+  if (typeof name !== "string" || !name.trim() ||
+      typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+      typeof password !== "string" || password.length < 8 || Buffer.byteLength(password) > 72) {
+    return res.status(400).json({ msg: "Enter a name, a valid email, and a password of at least 8 characters and at most 72 bytes." });
+  }
+  const userEmail = email.trim().toLowerCase();
   try {
-    if (!userName || !userEmail || !userPassword) {
-      res.status(400).json({ msg: "kindly fill all required fields" });
+    if (await User.findOne({ email: userEmail })) {
+      return res.status(409).json({ msg: "An account with this email already exists." });
     }
-    if (userPassword.length < 8) {
-      res
-        .status(400)
-        .json({ msg: "password must not be less than 8 characters" });
-    }
-    const findUserEmail = await User.findOne({ email });
-    if (findUserEmail) {
-      res.status(400).json({ msg: "email already exists" });
-    }
-
-    const createdUser = await User.create({
-      name: userName,
+    await User.create({
+      name: name.trim(),
       email: userEmail,
-      password: hashPassword(userPassword),
+      password: await hashPassword(password),
     });
-
-    if (!createdUser) {
-      return res.status(400).json({
-        msg: "error creating user profile.",
-      });
-    }
-
     return res.status(201).json({ msg: "account creation successful" });
   } catch (error) {
-    return res.status(500).json({ msg: "internal server error", error });
+    if (error.code === 11000) {
+      return res.status(409).json({ msg: "An account with this email already exists." });
+    }
+    console.error("Account creation failed:", error.name);
+    return res.status(500).json({ msg: "We could not create your account. Please try again." });
   }
 };
 
-// log user in
 const logUserIn = async (req, res) => {
-  const { email, password } = req.body;
-
+  const { email, password } = req.body || {};
+  if (typeof email !== "string" || !email.trim() ||
+      typeof password !== "string" || !password || Buffer.byteLength(password) > 72) {
+    return res.status(400).json({ msg: "Enter your email and password." });
+  }
   try {
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ msg: "Kindly enter your email and password" });
+    const user = await User.findOne({ email: email.trim().toLowerCase() }).select("+password");
+    if (!user || !(await comparePassword(password, user.password))) {
+      return res.status(401).json({ msg: "Email or password is incorrect." });
     }
-
-    const userExist = await userModel.findOne({ email });
-
-    if (!userExist) {
-      return res.status(400).json({ msg: "user not found. Kindly register" });
-    }
-    const isPasswordCorrect = await comparePassword(
-      password,
-      userExist.password
-    );
-
-    const token = generatedToken(userExist._id);
-
-    res.cookie("token", token, {
-      path: "/",
-      httpOnly: true,
-      expires: new Date(Date.now() + 1000 * 86400),
-      sameSite: "none",
-      secure: true,
-    });
-
-    if (userExist && isPasswordCorrect) {
-      const { _id, name, email } = userExist;
-      res.status(200).json({ msg: { _id, name, email }, token });
-    }
+    const token = generateToken(user._id);
+    res.cookie("token", token, { ...cookieOptions(), maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return res.status(200).json({ msg: publicUser(user), token });
   } catch (error) {
-    return res.status(500).json({ msg: error.message });
+    console.error("Login failed:", error.name);
+    return res.status(500).json({ msg: "We could not sign you in. Please try again." });
   }
 };
 
-// log user out
-const logUserOut = async (req, res) => {
-  res.cookie("token", "", {
-    path: "/",
-    httpOnly: true,
-    expires: new Date(0), // for mobile, it is advisable to delete the token instead
-    sameSite: "none",
-    secure: true,
-  });
+const logUserOut = (_req, res) => {
+  res.clearCookie("token", cookieOptions());
   return res.status(200).json({ msg: "logout successful" });
 };
 
-module.exports = { createUser, logUserIn, logUserOut };
+const getCurrentUser = (req, res) => res.status(200).json({ user: publicUser(req.user) });
+
+module.exports = { createUser, logUserIn, logUserOut, getCurrentUser };
